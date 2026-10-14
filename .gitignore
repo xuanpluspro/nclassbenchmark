@@ -2,6 +2,13 @@ __pycache__/
 *.py[cod]
 outputs/
 pretrained/
-data/
+data/*
+!data/README.md
+!data/RiceSEG/
+!data/GWFSS/
+data/RiceSEG/*
+!data/RiceSEG/.gitkeep
+data/GWFSS/*
+!data/GWFSS/.gitkeep
 .venv/
 .pytest_cache/

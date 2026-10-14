@@ -4,6 +4,18 @@
 
 ## 数据与类别
 
+仓库已预建 `data/RiceSEG/` 和 `data/GWFSS/`。在 AutoDL 的仓库根目录执行命令，把两个数据集分别上传成：
+
+```text
+nclassbenchmark/
+  data/
+    RiceSEG/VOC2012/
+    GWFSS/VOC2012/
+```
+
+例如仓库位于 `/root/autodl-tmp/nclassbenchmark`，RiceSEG 的完整路径就是 `/root/autodl-tmp/nclassbenchmark/data/RiceSEG/VOC2012`。每个 VOC2012 内包含 JPEGImages、SegmentationClass、ImageSets。Git 只跟踪说明文件和目录占位，上传的数据集不会被提交。
+
+
 采用已整理好的 VOC 目录：
 
 ```text
@@ -42,19 +54,19 @@ python download_pretrained.py --output pretrained
 先检查原始标签与类别像素统计：
 
 ```bash
-python audit_dataset.py --data-root /root/autodl-tmp/RiceSEG/VOC2012 --dataset-config configs/riceseg.json
+python audit_dataset.py --data-root data/RiceSEG/VOC2012 --dataset-config configs/riceseg.json
 ```
 
 RiceSEG 依次训练 experiments.json 中 10 个模型：
 
 ```bash
-python batch_train.py --dataset-name RiceSEG --run-name pretrained_ep30_bs32 --data-root /root/autodl-tmp/RiceSEG/VOC2012 --dataset-config configs/riceseg.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
+python batch_train.py --dataset-name RiceSEG --run-name pretrained_ep30_bs32 --data-root data/RiceSEG/VOC2012 --dataset-config configs/riceseg.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
 ```
 
 GWFSS（先核对配置中的标签名称与 ID）：
 
 ```bash
-python batch_train.py --dataset-name GWFSS --run-name pretrained_ep30_bs32 --data-root /root/autodl-tmp/GWFSS/VOC2012 --dataset-config configs/gwfss.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
+python batch_train.py --dataset-name GWFSS --run-name pretrained_ep30_bs32 --data-root data/GWFSS/VOC2012 --dataset-config configs/gwfss.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
 ```
 
 模型为 U-Net、U-Net++、MAnet、FPN、PSPNet、DeepLabV3+（ResNet34），U-Net、DeepLabV3+（MobileNetV2），SegFormer-B0/B2。它们是工程对比配置，不等同于两篇论文原始 baseline 的配置。修改 experiments.json 可增加 SMP 支持的组合。
