@@ -1,0 +1,18 @@
+{
+  "num_classes": 4,
+  "class_names": [
+    "background",
+    "class_1",
+    "class_2",
+    "class_3"
+  ],
+  "ignore_index": 255,
+  "background_index": 0,
+  "semantic_classes": [
+    "background",
+    "head",
+    "stem",
+    "leaf"
+  ],
+  "note": "Paper does not establish numeric mask IDs. Replace class_1..3 with actual names after checking exported masks; do not infer IDs from table order."
+}

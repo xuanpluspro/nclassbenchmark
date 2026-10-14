@@ -1,0 +1,13 @@
+{
+  "num_classes": 6,
+  "class_names": [
+    "background",
+    "green_vegetation",
+    "senescent_vegetation",
+    "panicle",
+    "weed",
+    "duckweed"
+  ],
+  "ignore_index": 255,
+  "background_index": 0
+}
