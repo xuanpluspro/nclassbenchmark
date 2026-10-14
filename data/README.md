@@ -1,7 +1,20 @@
 # 数据集存放位置
 
-请将已整理的 VOC 数据分别上传到 RiceSEG/VOC2012/ 和 GWFSS/VOC2012/。
+实际路径：
 
-每个 VOC2012/ 内需要 JPEGImages/、SegmentationClass/、ImageSets/，划分列表可位于 ImageSets/Main/、ImageSets/Segmentation/ 或 ImageSets/。
+```text
+data/RiceSegnclass/
+  JPEGImages/
+  SegmentationClass/
+  ImageSets/train.txt
+  ImageSets/val.txt
+  ImageSets/test.txt
+data/GWFSSnclass/
+  JPEGImages/
+  SegmentationClass/
+  ImageSets/train.txt
+  ImageSets/val.txt
+  ImageSets/test.txt
+```
 
-从仓库根目录运行时，分别设置 --data-root data/RiceSEG/VOC2012 或 --data-root data/GWFSS/VOC2012。数据内容被 .gitignore 忽略，不会上传到 GitHub。
+不需要额外套 VOC2012 或 Main 文件夹。分别设置 --data-root data/RiceSegnclass 和 --data-root data/GWFSSnclass。目录名区分大小写。数据内容被 Git 忽略，不会上传到 GitHub。

@@ -4,11 +4,11 @@ outputs/
 pretrained/
 data/*
 !data/README.md
-!data/RiceSEG/
-!data/GWFSS/
-data/RiceSEG/*
-!data/RiceSEG/.gitkeep
-data/GWFSS/*
-!data/GWFSS/.gitkeep
+!data/RiceSegnclass/
+!data/GWFSSnclass/
+data/RiceSegnclass/*
+!data/RiceSegnclass/.gitkeep
+data/GWFSSnclass/*
+!data/GWFSSnclass/.gitkeep
 .venv/
 .pytest_cache/

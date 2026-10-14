@@ -4,30 +4,30 @@
 
 ## 数据与类别
 
-仓库已预建 `data/RiceSEG/` 和 `data/GWFSS/`。在 AutoDL 的仓库根目录执行命令，把两个数据集分别上传成：
+仓库已预建 `data/RiceSegnclass/` 和 `data/GWFSSnclass/`。在 AutoDL 的仓库根目录执行命令，把两个数据集分别上传成：
 
 ```text
 nclassbenchmark/
   data/
-    RiceSEG/VOC2012/
-    GWFSS/VOC2012/
+    RiceSegnclass/
+    GWFSSnclass/
 ```
 
-例如仓库位于 `/root/autodl-tmp/nclassbenchmark`，RiceSEG 的完整路径就是 `/root/autodl-tmp/nclassbenchmark/data/RiceSEG/VOC2012`。每个 VOC2012 内包含 JPEGImages、SegmentationClass、ImageSets。Git 只跟踪说明文件和目录占位，上传的数据集不会被提交。
+例如仓库位于 `/root/autodl-tmp/nclassbenchmark`，RiceSEG 的完整路径就是 `/root/autodl-tmp/nclassbenchmark/data/RiceSegnclass`。每个数据集目录内包含 JPEGImages、SegmentationClass、ImageSets。Git 只跟踪说明文件和目录占位，上传的数据集不会被提交。
 
 
 采用已整理好的 VOC 目录：
 
 ```text
-VOC2012/
+RiceSegnclass/（GWFSSnclass 同结构）
   JPEGImages/<id>.jpg
   SegmentationClass/<id>.png
-  ImageSets/Main/train.txt
-  ImageSets/Main/val.txt
-  ImageSets/Main/test.txt
+  ImageSets/train.txt
+  ImageSets/val.txt
+  ImageSets/test.txt
 ```
 
-也兼容 `ImageSets/Segmentation/`、`ImageSets/`。列表每行是不含扩展名的文件名。训练、验证、测试 ID 必须互不重叠。建议先对原始图像划分，再切 patch，避免同一原图的 patch 跨集合泄漏；地块/区域/连续拍摄有相关性时按组划分更可靠。
+优先读取 `ImageSets/`，也兼容 `ImageSets/Main/`、`ImageSets/Segmentation/`。列表每行是不含扩展名的文件名。训练、验证、测试 ID 必须互不重叠。建议先对原始图像划分，再切 patch，避免同一原图的 patch 跨集合泄漏；地块/区域/连续拍摄有相关性时按组划分更可靠。
 
 Mask 必须是单通道类别 ID 或 P 模式 PNG：像素值 `0..C-1`；`255` 为忽略像素。P 模式直接读取索引，不转换 RGB，也不除以 255。彩色可视化图不能代替索引 mask。图像用双线性、标签用最近邻 resize 到统一输入尺寸。
 
@@ -54,19 +54,19 @@ python download_pretrained.py --output pretrained
 先检查原始标签与类别像素统计：
 
 ```bash
-python audit_dataset.py --data-root data/RiceSEG/VOC2012 --dataset-config configs/riceseg.json
+python audit_dataset.py --data-root data/RiceSegnclass --dataset-config configs/riceseg.json
 ```
 
 RiceSEG 依次训练 experiments.json 中 10 个模型：
 
 ```bash
-python batch_train.py --dataset-name RiceSEG --run-name pretrained_ep30_bs32 --data-root data/RiceSEG/VOC2012 --dataset-config configs/riceseg.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
+python batch_train.py --dataset-name RiceSEG --run-name pretrained_ep30_bs32 --data-root data/RiceSegnclass --dataset-config configs/riceseg.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
 ```
 
 GWFSS（先核对配置中的标签名称与 ID）：
 
 ```bash
-python batch_train.py --dataset-name GWFSS --run-name pretrained_ep30_bs32 --data-root data/GWFSS/VOC2012 --dataset-config configs/gwfss.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
+python batch_train.py --dataset-name GWFSS --run-name pretrained_ep30_bs32 --data-root data/GWFSSnclass --dataset-config configs/gwfss.json --weights local --pretrained-dir pretrained --size 512 --batch-size 32 --epochs 30
 ```
 
 模型为 U-Net、U-Net++、MAnet、FPN、PSPNet、DeepLabV3+（ResNet34），U-Net、DeepLabV3+（MobileNetV2），SegFormer-B0/B2。它们是工程对比配置，不等同于两篇论文原始 baseline 的配置。修改 experiments.json 可增加 SMP 支持的组合。

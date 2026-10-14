@@ -15,7 +15,7 @@ class VOC(Dataset):
     def __init__(self, root, split, size, num_classes, augment=False, ignore_index=255):
         self.root, self.size, self.augment = Path(root), size, augment
         self.num_classes, self.ignore_index = num_classes, ignore_index
-        paths = [self.root/'ImageSets'/'Segmentation'/f'{split}.txt', self.root/'ImageSets'/'Main'/f'{split}.txt', self.root/'ImageSets'/f'{split}.txt']
+        paths = [self.root/'ImageSets'/f'{split}.txt', self.root/'ImageSets'/'Main'/f'{split}.txt', self.root/'ImageSets'/'Segmentation'/f'{split}.txt']
         manifest = next((p for p in paths if p.exists()), None)
         if manifest is None: raise FileNotFoundError(f'Missing split: {paths}')
         self.ids = [x.strip() for x in manifest.read_text(encoding='utf-8-sig').splitlines() if x.strip()]
