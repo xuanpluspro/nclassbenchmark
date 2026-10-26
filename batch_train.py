@@ -2,7 +2,7 @@
 import argparse,csv,json,subprocess,sys
 from pathlib import Path
 from datetime import datetime
-from segmentation_metrics import result_rows, write_summary
+from result_tables import read_record, export_tables
 
 def run_logged(cmd, log_path):
     # Binary forwarding preserves tqdm carriage returns in the terminal.
@@ -55,7 +55,7 @@ def main():
     p.add_argument('--run-name',help='Experiment name; defaults to weights/epochs/batch/time')
     p.add_argument('--legacy-output',action='store_true',help='Use the old flat layout to resume existing experiments')
     a,extra=p.parse_known_args(); root=prepare_output(a,extra,p)
-    jobs=json.loads(Path(a.experiments).read_text()); rows=[]
+    jobs=json.loads(Path(a.experiments).read_text()); records=[]; failures=[]
     total_jobs=len(jobs)*len(a.seeds); job_number=0
     for job in jobs:
         for seed in a.seeds:
@@ -68,12 +68,12 @@ def main():
             print('Running:',cmd,flush=True)
             status=run_logged(cmd,out/'console.log')
             if status==0:
-                metrics=json.loads((out/'metrics.json').read_text())
-                rows.extend(result_rows(metrics,name=job['name'],seed=seed,status=status))
+                records.append(read_record(out/'metrics.json',name=job['name'],source_run=str(out.relative_to(root))))
             else:
-                rows.append(dict(name=job['name'],seed=seed,status=status))
-            write_summary(rows,root/'results.csv')
+                failures.append(dict(name=job['name'],seed=seed,status=status,source_run=str(out.relative_to(root))))
+            export_tables(records,root,failures)
             print(f"Finished {out}: status={status}; see console.log",flush=True)
-    if any(r['status'] for r in rows):sys.exit(1)
+    if failures:sys.exit(1)
 if __name__=='__main__': main()
+
 

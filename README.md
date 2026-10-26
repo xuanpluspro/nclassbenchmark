@@ -161,3 +161,84 @@ python -m unittest discover -s tests -v
 旧 JSON 中的兼容字段暂时保留，标准 CSV 只使用上表字段。`plant-seg-lab` 的 `Foreground IoU` 现在对应 `foreground_miou`，原合并值改称 `Union Foreground IoU`；`nclassbenchmark` 的旧 `mdice` 仍是含背景均值，论文推荐取标准 `dice`（等于 `mdice_fg`）。各仓库的损失函数、模型结构、数据增强和预训练设置不因这次指标统一而改变。
 
 旧权重可以重新评价，无需重新训练；旧 CSV 不会自动变为新口径。使用对应原始训练参数在两个 benchmark 仓库追加 `--eval-only`，或在 plant-seg-lab 使用 `summarize.py` / `evaluate_transfer.py` 重新生成结果。不要混合旧边界指标和 v2 指标。统计代码的验证命令：`python -m unittest discover -s tests -p 'test_metric_*.py' -v`（仅需 NumPy/SciPy，无需 GPU）。
+
+
+## 已训练模型：批量重新评估与逐类总表
+
+模型已经训练完成时，无需重新训练。新增三个入口：
+
+| 脚本 | 用途 | 是否执行模型推理 |
+|---|---|---|
+| `batch_evaluate.py` | 自动发现已有 `best.pth`，按模型逐个评估并汇总 | 是；不训练 |
+| `evaluate_checkpoint.py` | 单个已有 checkpoint 的独立评估 | 是；不训练 |
+| `summarize_results.py` | 只读各模型已有 `metrics.json` 并汇总 | 否；无需 GPU |
+
+### A. 加载十个旧模型，按新口径重新评估
+
+`--runs-root` 填一个数据集的一次实验目录，该目录下面应包含各模型文件夹及其 `best.pth`。兼容旧的扁平输出目录和新的分层目录；不要同时选择多个数据集、重复实验或重复评估目录。
+
+```bash
+python batch_evaluate.py \
+  --runs-root "outputs/GWFSSnclass/你的原实验目录" \
+  --data-root /root/autodl-tmp/nclassbenchmark/data/GWFSSnclass \
+  --splits val test \
+  --batch-size 8 \
+  --workers 4 \
+  --device cuda \
+  --output "evaluation/gwfss_existing_models_v2"
+```
+
+只需测试集时改为 `--splits test`。RiceSEG 使用其自己的已训练实验目录及数据根目录：`/root/autodl-tmp/nclassbenchmark/data/RiceSegnclass`。每个数据集分别运行，分别保存汇总。
+
+- 原始架构、编码器、类别数量/名称、输入分辨率和最优轮次直接从 checkpoint 读取，不要求重新填写 epochs、学习率或训练 batch size。
+- `--batch-size` 仅是评估 batch size，可以与训练不同；类别和预处理沿用 checkpoint。数据搬家时用 `--data-root` 指定新地址，原路径仍有效时可省略。
+- 只读取指定的 val/test 清单及对应图片和掩膜，不要求重新加载训练集。请使用你原实验的独立测试清单；旧 checkpoint 未保存清单 ID，无法追溯验证它是否被改动。本次会记录样本 ID 与清单哈希。
+- 直接构造 `encoder_weights=None` 的模型并严格加载完整训练权重；不下载 ImageNet 权重，不依赖原 pretrained 目录，不创建优化器，不进行反向传播、不保存新 pth，也不导出预测掩膜。
+- 原始 `best.pth`、`last.pth`、训练历史和结果保留；新输出目录必须不存在或为空。没有指定 `--output` 时自动在原实验目录下新建带时间的 evaluation 目录。
+- 每个模型使用独立进程；某个模型失败会记录日志并继续其余模型，最后返回非零退出码，不将失败模型分数记作 0。
+- 默认重新测量参数量、GFLOPs 和 FP32 GPU 前向延迟/FPS；`--no-benchmark` 可跳过测速，此时 FPS 留空，不借用旧设备的结果。运算统计不完整时完整 GFLOPs 仍为空，不影响精度结果。
+- 只加载自己生成且可信的 checkpoint；原文件包含 NumPy RNG/优化器状态，因此读取使用 `weights_only=False`，模型恢复后不使用其中的训练状态。
+
+### B. 已有完整结果，只重新生成总表
+
+```bash
+python summarize_results.py \
+  --runs-root "outputs/GWFSSnclass/你的原实验目录" \
+  --output "summary/gwfss_existing_results"
+```
+
+也可以对 A 生成的 evaluation 目录运行此命令。只读各模型的 `metrics.json`，不加载 pth、不执行推理。旧版 nclass JSON 支持读取 `mdice_fg`、`miou_fg`、逐类 `acc` 等字段；前景 Dice 不会误取含背景的 `mdice`。旧结果中没有的边界指标留空，不会自动补算或伪装为 v2；重新推理才能生成新边界口径。
+
+仅有旧的根目录 `results.csv` 不能恢复未保存的逐类 IoU；请保留各模型的 `metrics.json`，或使用 A 重新评估。汇总器检测到重复模型/种子、不同类别映射、不同数据根目录或不同输入尺寸时会报错，避免把不一致实验拼在一起。多个种子单独成行，不挑选最好种子、不自动跨种子平均。
+
+### C. 输出总表
+
+下列文件保存到 A 的 evaluation 根目录、B 的 output 目录，或新批量训练的实验根目录：
+
+| 文件 | 格式与用途 |
+|---|---|
+| `results.csv` | 所有模型总体指标，每个模型/种子/划分一行 |
+| `all_class_metrics.csv` | 所有模型逐类指标长表，每个模型/种子/划分/类别一行 |
+| `test_class_iou.csv` | 测试集论文用宽表，每个模型/种子一行；含 mIoU、前景 Dice、每类 IoU、参数量、FPS |
+| `val_class_iou.csv` | 验证集相同格式；只评估 test 时为空表（仅表头） |
+| `summary_manifest.json` | 类别映射、来源文件、协议版本及失败模型记录 |
+| `evaluation_status.json`、`logs/` | A 的逐模型状态与完整日志 |
+
+A 还会在 `models/` 下保存每个模型的标准 JSON/CSV 结果。新训练完成后，`batch_train.py` 也会自动更新以上总体/逐类总表。
+
+逐类 IoU 列名示例：`iou_0_background`、`iou_1_class_1`、`iou_2_class_2`、`iou_3_class_3`；RiceSEG 会展开成其六个类别。类别名称沿用实际 checkpoint/结果文件，GWFSS 若仍是 class_1..3，请核对自己的标签映射后再用于论文，不根据论文列举顺序自动重命名。数值保存为 0–1，论文制表时区域分数乘 100。
+
+### D. 单模型评估与检查
+
+```bash
+python evaluate_checkpoint.py \
+  --weights "outputs/某模型目录/best.pth" \
+  --data-root /root/autodl-tmp/nclassbenchmark/data/GWFSSnclass \
+  --output evaluation/one_model \
+  --splits test --device cuda --batch-size 8
+
+python -m unittest discover -s tests -p 'test_result_tables.py' -v
+python -m unittest discover -s tests -p 'test_checkpoint_evaluation.py' -v
+```
+
+汇总及调度逻辑测试不需要 GPU。实际 checkpoint 加载的 CPU 集成测试在存在 PyTorch/SMP 时执行；缺少依赖时明确跳过。真实训练权重与完整数据集推理需在 AutoDL 上验证。
