@@ -89,13 +89,13 @@ python train.py --data-root /path/to/VOC2012 --num-classes 4 --class-names backg
 - `IoU_c = TP_c / (TP_c + FP_c + FN_c)`。
 - `Acc_c = TP_c / (TP_c + FN_c)`，等于类别召回率；**不使用含大量 TN 的 one-vs-rest accuracy**。
 - `Dice_c = 2 TP_c / (2 TP_c + FP_c + FN_c)`。
-- `mIoU/mAcc/mDice`：对类别等权平均，默认含背景。
+- 标准 `miou/macc` 包含背景；标准 `dice` 仅平均前景。旧 `mdice` 是包含背景的补充值。
 - `PixAcc`：全部有效像素中预测正确的比例，与 mAcc 不同。
 - `miou_fg/macc_fg/mdice_fg`：仅从平均中排除背景类别，仍保留背景误判造成的 FP/FN。
 - 整个评估集某类 GT 和预测都不存在，IoU/Dice 为 null，不参与均值；GT 不存在但出现误预测，IoU 为 0。GT 不存在时 Acc 为 null。输出参与平均的类别数，审查测试集是否缺类。
-- 所有数值保存为 0..1；论文制表时统一乘以 100。
+- 区域指标和 Boundary F1 保存为 0..1；HD95/ASSD 为像素距离，不能乘以 100。
 
-建议主表：模型、mIoU、mAcc、mDice、PixAcc、Params(M)、GFLOPs、FPS。另存逐类别 IoU/Acc/Dice/Precision 和混淆矩阵。少数类性能不能仅靠均值判断，尤其是 GWFSS 的茎、RiceSEG 的衰老植被/杂草/浮萍。报告背景是否参与均值，不能混用两种统计口径。
+建议主表：模型、mIoU、前景 Dice、每类 IoU、Params(M)、GFLOPs、FPS。另存逐类别 IoU/Acc/Dice/Precision 和混淆矩阵。少数类性能不能仅靠均值判断，尤其是 GWFSS 的茎、RiceSEG 的衰老植被/杂草/浮萍。报告背景是否参与均值，不能混用两种统计口径。
 
 ## 输出
 
@@ -129,3 +129,35 @@ python -m unittest discover -s tests -v
 ```
 
 包含手算混淆矩阵、缺失类/误预测、忽略标签、跨 batch 累计、P 模式读取与多分类损失反向传播测试。CPU 合成数据验证只能说明工程链路，真实精度和 CUDA 显存/速度需要在服务器实际训练验证。
+
+
+
+## 统一指标与结果格式（bimseg-segmentation-v2）
+
+三个仓库使用内容完全一致的 `segmentation_metrics.py`。区域指标先累计整个评估集的混淆矩阵，行=真实类别、列=预测类别；不对逐图 IoU/Dice 求平均。
+
+| 标准字段 | 计算口径 |
+|---|---|
+| `miou` / `macc` | 全部类别（包含背景）的 IoU / Recall 宏平均；所有任务按验证集 mIoU 选择最佳权重 |
+| `foreground_miou` | 仅前景各类别 IoU 的宏平均；二分类即前景 IoU |
+| `union_foreground_iou` | 合并所有非背景类别后的 IoU，不能反映前景内部错分 |
+| `dice` / `precision` / `recall` | 全数据集统计，前景类别宏平均 |
+| `dice_all` | 包含背景的 Dice 宏平均，作为补充，不能与 `dice` 混用 |
+| `pixacc` / `fwiou` | 总体像素准确率 / 按真实像素频率加权的 IoU |
+| `specificity` | 前景并集的特异度，即背景 Recall |
+| `boundary_f1` / `hd95` / `assd` | 逐图逐前景类别计算，先在图内对有效前景类别平均，再对有效图片平均；另存每类结果 |
+
+区域指标分母为零时记录 JSON `null` / CSV 空单元格，宏平均排除该项。边界类别在预测和真实标签中都为空时不参与平均；仅一方为空时 BF1=0、HD95/ASSD=图像对角线。整幅图没有任何有效前景类别对时不参与边界均值；整个数据集都没有时为 null。Boundary F1 默认容差 2 像素，HD95/ASSD 单位为评估尺寸下的像素；其他分数为 0–1。忽略像素不参与统计；将其屏蔽可能在忽略区边缘产生轮廓，比较时必须使用相同有效像素和分辨率。
+
+每次最终评估统一写出：
+- `metrics.json`：完整结果、每类指标、混淆矩阵和协议版本。
+- `results.csv`：固定字段，每行对应 val 或 test。区域 `precision` 与测速 `precision_mode` 分开，避免覆盖。
+- `class_metrics.csv`：每个数据划分、每个类别一行，含 IoU、Dice、Precision、Recall、像素数及边界结果；背景边界列留空。
+- `confusion_matrix.csv`：长表 `split,true_class,predicted_class,pixels`。
+- 开启复杂度测试时另有 `benchmark.json`：完整网络参数量、GFLOPs、FP32 单图前向延迟/FPS等。
+
+批量仓库的实验根目录 `results.csv` 也使用相同列，每个模型/种子/划分一行，以 `name`、`seed`、`split` 区分，不再使用 `test_` / `val_` 前缀的宽表。模型子目录同样保存上述四个文件。缺失或失败数据留空，失败行记录非零 `status`。
+
+旧 JSON 中的兼容字段暂时保留，标准 CSV 只使用上表字段。`plant-seg-lab` 的 `Foreground IoU` 现在对应 `foreground_miou`，原合并值改称 `Union Foreground IoU`；`nclassbenchmark` 的旧 `mdice` 仍是含背景均值，论文推荐取标准 `dice`（等于 `mdice_fg`）。各仓库的损失函数、模型结构、数据增强和预训练设置不因这次指标统一而改变。
+
+旧权重可以重新评价，无需重新训练；旧 CSV 不会自动变为新口径。使用对应原始训练参数在两个 benchmark 仓库追加 `--eval-only`，或在 plant-seg-lab 使用 `summarize.py` / `evaluate_transfer.py` 重新生成结果。不要混合旧边界指标和 v2 指标。统计代码的验证命令：`python -m unittest discover -s tests -p 'test_metric_*.py' -v`（仅需 NumPy/SciPy，无需 GPU）。

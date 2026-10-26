@@ -8,6 +8,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 import segmentation_models_pytorch as smp
 from metrics import MulticlassSegmentationMetrics, export_metrics
+from segmentation_metrics import write_run_results, append_history
 from benchmark import benchmark_model
 from local_weights import load_local_encoder
 
@@ -68,9 +69,9 @@ def loss_fn(logits, target, ignore_index=255):
     return ce + (1-dice[present]).mean()
 
 @torch.no_grad()
-def evaluate(model, loader, device, num_classes, class_names, ignore_index=255, desc='Validation'):
+def evaluate(model, loader, device, num_classes, class_names, ignore_index=255, desc='Validation', background_index=0):
     model.eval()
-    meter = MulticlassSegmentationMetrics(num_classes, class_names, ignore_index)
+    meter = MulticlassSegmentationMetrics(num_classes, class_names, ignore_index, background_index)
     for x,y in tqdm(loader,desc=desc,dynamic_ncols=True,mininterval=1.0):
         prediction = model(x.to(device)).argmax(1).cpu()
         meter.update(prediction, y)
@@ -152,25 +153,24 @@ def main():
                 loss=loss_fn(model(x),y,a.ignore_index)
             scaler.scale(loss).backward(); scaler.step(opt); scaler.update(); total+=loss.item()*len(x)
             seen+=len(x); progress.set_postfix(loss=f'{total/seen:.4f}',refresh=False)
-        result=evaluate(model,valloader,device,a.num_classes,a.class_names,a.ignore_index,desc=f'Epoch {epoch+1}/{a.epochs} Val'); scheduler.step()
+        result=evaluate(model,valloader,device,a.num_classes,a.class_names,a.ignore_index,desc=f'Epoch {epoch+1}/{a.epochs} Val',background_index=a.background_index); scheduler.step()
         improved=result['miou']>best
         if improved: best=result['miou']
         ck=dict(model=model.state_dict(),optimizer=opt.state_dict(),scheduler=scheduler.state_dict(),scaler=scaler.state_dict(),epoch=epoch,best=best,config=vars(a),python_rng=random.getstate(),numpy_rng=np.random.get_state(),torch_rng=torch.get_rng_state(),cuda_rng=torch.cuda.get_rng_state_all() if device.type=='cuda' else None)
         torch.save(ck,out/'last.pth')
         if improved: torch.save(ck,out/'best.pth')
-        row=dict(epoch=epoch+1,loss=total/len(train),seconds=time.time()-begin,**{k:v for k,v in result.items() if isinstance(v,(int,float)) or v is None})
-        with (out/'history.csv').open('a',newline='') as f:
-            w=csv.DictWriter(f,fieldnames=row.keys())
-            if f.tell()==0:w.writeheader()
-            w.writerow(row)
-        print(f"Epoch {epoch+1}/{a.epochs} | loss={row['loss']:.4f} | val mIoU={result['miou']:.4f} | Dice={result['mdice']:.4f} | best mIoU={best:.4f} | time={row['seconds']:.1f}s",flush=True)
+        row=dict(metric_protocol=result["metric_protocol"],epoch=epoch+1,loss=total/len(train),seconds=time.time()-begin,**{k:v for k,v in result.items() if isinstance(v,(int,float)) or v is None})
+        append_history(row,out/'history.csv')
+        print(f"Epoch {epoch+1}/{a.epochs} | loss={row['loss']:.4f} | val mIoU={result['miou']:.4f} | Dice={result['dice']:.4f} | best mIoU={best:.4f} | time={row['seconds']:.1f}s",flush=True)
     ck=torch.load(out/'best.pth',map_location=device,weights_only=False); model.load_state_dict(ck['model'])
-    result=dict(arch=a.arch,encoder=a.encoder,seed=a.seed,best_epoch=ck['epoch']+1,parameters=sum(p.numel() for p in model.parameters()),val=evaluate(model,valloader,device,a.num_classes,a.class_names,a.ignore_index))
-    if test is not None: result['test']=evaluate(model,loader(test),device,a.num_classes,a.class_names,a.ignore_index,desc='Test')
+    result=dict(arch=a.arch,encoder=a.encoder,seed=a.seed,best_epoch=ck['epoch']+1,parameters=sum(p.numel() for p in model.parameters()),val=evaluate(model,valloader,device,a.num_classes,a.class_names,a.ignore_index,background_index=a.background_index))
+    if test is not None: result['test']=evaluate(model,loader(test),device,a.num_classes,a.class_names,a.ignore_index,desc='Test',background_index=a.background_index)
+    write_run_results(result,out)
     print('Measuring parameters, FLOPs and inference speed...',flush=True)
     result['benchmark']=benchmark_model(model,a.size,a.benchmark_warmup,a.benchmark_iterations)
     (out/'benchmark.json').write_text(json.dumps(result['benchmark'],indent=2))
     for split in ['val','test']:
         if split in result: export_metrics(result[split], out, split, a.background_index)
-    (out/'metrics.json').write_text(json.dumps(result,indent=2,allow_nan=False)); print(json.dumps(result,indent=2))
+    write_run_results(result,out); print(json.dumps(result,indent=2,allow_nan=False))
 if __name__=='__main__': main()
+
